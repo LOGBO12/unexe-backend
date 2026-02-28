@@ -1,8 +1,123 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
-    return $request->user();
+// Controllers publics
+use App\Http\Controllers\Public\PublicController;
+
+// Controllers Auth
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\InvitationController;
+
+// Controllers candidat
+use App\Http\Controllers\Candidate\ApplicationController;
+use App\Http\Controllers\Candidate\ProfileController;
+
+// Controllers admin
+use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\CommitteeController;
+use App\Http\Controllers\Admin\PartnerController;
+
+// Controllers forum
+use App\Http\Controllers\Community\ForumController;
+
+// ===================================================
+// ROUTES PUBLIQUES (sans authentification)
+// ===================================================
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login',    [AuthController::class, 'login']);
+
+// Vérification token d'invitation
+Route::get('/invitation/{token}', [InvitationController::class, 'check']);
+
+// Pages publiques
+Route::prefix('public')->group(function () {
+    Route::get('/candidates', [PublicController::class, 'candidates']);
+    Route::get('/committee',  [PublicController::class, 'committee']);
+    Route::get('/partners',   [PublicController::class, 'partners']);
+});
+
+// Partenaires (lecture publique pour admin front)
+Route::get('/partners', [PartnerController::class, 'index']);
+
+// ===================================================
+// ROUTES PROTÉGÉES (authentification requise)
+// ===================================================
+Route::middleware('auth:sanctum')->group(function () {
+
+    // Auth
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me',      [AuthController::class, 'me']);
+
+    // -----------------------------------------------
+    // CANDIDAT : Complétion profil
+    // -----------------------------------------------
+    Route::middleware('role:candidat')->group(function () {
+        Route::post('/profile/complete', [ProfileController::class, 'complete']);
+        Route::put('/profile',           [ProfileController::class, 'update']);
+        Route::get('/profile',           [ProfileController::class, 'show']);
+
+        // Candidature
+        Route::post('/applications',  [ApplicationController::class, 'store']);
+        Route::get('/my-application', [ApplicationController::class, 'myApplication']);
+    });
+
+    // -----------------------------------------------
+    // FORUM (Comité + Candidats validés)
+    // -----------------------------------------------
+    Route::middleware('can_access_forum')->prefix('forum')->group(function () {
+        // Topics
+        Route::get('/topics',    [ForumController::class, 'index']);
+        Route::get('/topics/{id}', [ForumController::class, 'show']);
+        Route::post('/topics',   [ForumController::class, 'store']);
+        Route::delete('/topics/{id}', [ForumController::class, 'destroy']);
+
+        // Replies
+        Route::post('/topics/{id}/replies', [ForumController::class, 'storeReply']);
+        Route::delete('/replies/{id}',      [ForumController::class, 'destroyReply']);
+
+        // Comité uniquement
+        Route::middleware('role:super_admin,comite')->group(function () {
+            Route::post('/announcements',        [ForumController::class, 'storeAnnouncement']);
+            Route::put('/topics/{id}/pin',       [ForumController::class, 'pin']);
+            Route::put('/topics/{id}/close',     [ForumController::class, 'close']);
+            Route::put('/replies/{id}/official', [ForumController::class, 'markOfficial']);
+        });
+    });
+
+    // -----------------------------------------------
+    // COMITÉ & ADMIN
+    // -----------------------------------------------
+    Route::middleware('role:super_admin,comite')->group(function () {
+
+        // Dashboard
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+        Route::get('/logs',      [DashboardController::class, 'logs']);
+
+        // Gestion candidatures
+        Route::get('/applications',             [ApplicationController::class, 'index']);
+        Route::get('/applications/{id}',        [ApplicationController::class, 'show']);
+        Route::post('/applications/{id}/validate', [ApplicationController::class, 'validate']);
+        Route::post('/applications/{id}/reject',   [ApplicationController::class, 'reject']);
+
+        // Invitations
+        Route::post('/invite',           [InvitationController::class, 'send']);
+        Route::get('/invitations',       [InvitationController::class, 'index']);
+        Route::delete('/invitations/{id}', [InvitationController::class, 'cancel']);
+
+        // Comité — Membres
+        Route::get('/committee/members',         [CommitteeController::class, 'index']);
+        Route::post('/committee/members',        [CommitteeController::class, 'store']);
+        Route::put('/committee/members/{id}',    [CommitteeController::class, 'update']);
+        Route::delete('/committee/members/{id}', [CommitteeController::class, 'destroy']);
+
+        // Comité — Page publique
+        Route::get('/committee/page', [CommitteeController::class, 'getPage']);
+        Route::put('/committee/page', [CommitteeController::class, 'updatePage']);
+
+        // Partenaires
+        Route::post('/partners',       [PartnerController::class, 'store']);
+        Route::put('/partners/{id}',   [PartnerController::class, 'update']);
+        Route::delete('/partners/{id}', [PartnerController::class, 'destroy']);
+    });
 });

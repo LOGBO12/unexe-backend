@@ -40,6 +40,7 @@ return [
     */
 
     'debug' => (bool) env('APP_DEBUG', false),
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
     /*
     |--------------------------------------------------------------------------

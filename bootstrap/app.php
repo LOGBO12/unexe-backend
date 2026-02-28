@@ -19,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
+            'role'             => \App\Http\Middleware\RoleMiddleware::class,
+            'can.access.forum' => \App\Http\Middleware\CanAccessForumMiddleware::class,
+            'profile.complete' => \App\Http\Middleware\ProfileCompleteMiddleware::class,
         ]);
 
         //
