@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\PartnerController;
 
 // Controllers forum
 use App\Http\Controllers\Community\ForumController;
+use App\Http\Controllers\Admin\AdminProfileController;
 
 // ===================================================
 // ROUTES PUBLIQUES (sans authentification)
@@ -29,7 +30,7 @@ Route::post('/login',    [AuthController::class, 'login']);
 
 // Vérification token d'invitation
 Route::get('/invitation/{token}', [InvitationController::class, 'check']);
-
+Route::post('/invitation/{token}/activate', [InvitationController::class, 'activate']);
 // Pages publiques
 Route::prefix('public')->group(function () {
     Route::get('/candidates', [PublicController::class, 'candidates']);
@@ -48,6 +49,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me',      [AuthController::class, 'me']);
+
+
+    // ── PROFIL (tous les utilisateurs connectés) ──
+    Route::get('/admin/profile',             [AdminProfileController::class, 'show']);
+    Route::post('/admin/profile/update',     [AdminProfileController::class, 'update']);
+    Route::put('/admin/profile/password',    [AdminProfileController::class, 'changePassword']);
 
     // -----------------------------------------------
     // CANDIDAT : Complétion profil
