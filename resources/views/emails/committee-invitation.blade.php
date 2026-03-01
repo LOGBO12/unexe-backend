@@ -9,12 +9,13 @@
         <p><strong>🔑 Mot de passe provisoire :</strong> {{ $defaultPassword }}</p>
     </div>
 
-    <p>Cliquez sur le bouton ci-dessous pour vous connecter et configurer votre compte :</p>
+    <p>Cliquez sur le bouton ci-dessous pour <strong>activer votre compte</strong> et choisir votre mot de passe définitif :</p>
 
-    <a href="{{ $loginUrl }}" class="btn">Accéder à mon espace</a>
+    {{-- ✅ $activationUrl pointe vers /invitation/{token} --}}
+    <a href="{{ $activationUrl }}" class="btn">Activer mon compte</a>
 
     <p style="color: #e63946; font-size: 13px;">
-        ⚠️ Ce lien expire dans 48 heures. Pensez à changer votre mot de passe après connexion.
+        ⚠️ Ce lien expire dans 48 heures.
     </p>
 
     <p>Bienvenue dans l'équipe UNEXE !</p>

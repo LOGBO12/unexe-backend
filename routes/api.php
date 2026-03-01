@@ -28,9 +28,10 @@ use App\Http\Controllers\Admin\AdminProfileController;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 
-// Vérification token d'invitation
-Route::get('/invitation/{token}', [InvitationController::class, 'check']);
+
+Route::get('/invitation/{token}',          [InvitationController::class, 'checkToken']);
 Route::post('/invitation/{token}/activate', [InvitationController::class, 'activate']);
+
 // Pages publiques
 Route::prefix('public')->group(function () {
     Route::get('/candidates', [PublicController::class, 'candidates']);
