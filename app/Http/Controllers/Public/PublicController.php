@@ -18,21 +18,16 @@ class PublicController extends Controller
     {
         $query = Candidate::with('user', 'department')
             ->where('status', 'validated')
-            ->whereNotNull('photo') // Seulement ceux qui ont complété leur profil
+            ->whereNotNull('photo')
             ->orderBy('department_id')
             ->orderBy('year');
 
-        // Filtre par département
         if ($request->has('department_id')) {
             $query->where('department_id', $request->department_id);
         }
-
-        // Filtre par année
         if ($request->has('year')) {
             $query->where('year', $request->year);
         }
-
-        // Recherche par nom
         if ($request->has('search')) {
             $search = $request->search;
             $query->whereHas('user', function ($q) use ($search) {
@@ -42,23 +37,20 @@ class PublicController extends Controller
 
         $candidates = $query->get()->map(function ($candidate) {
             return [
-                'id'         => $candidate->id,
-                'name'       => $candidate->user->name,
-                'filiere'    => $candidate->filiere,
-                'year'       => $candidate->year,
-                'bio'        => $candidate->bio,
-                'photo_url'  => $candidate->photo
+                'id'              => $candidate->id,
+                'name'            => $candidate->user->name,
+                'filiere'         => $candidate->filiere,
+                'year'            => $candidate->year,
+                'bio'             => $candidate->bio,
+                'photo_url'       => $candidate->photo
                     ? Storage::url($candidate->photo)
                     : null,
-                'department' => $candidate->department->name,
+                'department'      => $candidate->department->name,
                 'department_slug' => $candidate->department->slug,
             ];
         });
 
-        // Grouper par département
-        $grouped = $candidates->groupBy('department');
-
-        // Départements disponibles pour les filtres
+        $grouped     = $candidates->groupBy('department');
         $departments = Department::withCount([
             'candidates as validated_count' => fn($q) =>
                 $q->where('status', 'validated')->whereNotNull('photo')
@@ -80,11 +72,11 @@ class PublicController extends Controller
             ->get()
             ->map(function ($member) {
                 return [
-                    'id'           => $member->id,
-                    'name'         => $member->user->name,
-                    'position'     => $member->position,
-                    'bio'          => $member->bio,
-                    'photo_url'    => $member->photo
+                    'id'            => $member->id,
+                    'name'          => $member->user->name,
+                    'position'      => $member->position,
+                    'bio'           => $member->bio,
+                    'photo_url'     => $member->photo
                         ? Storage::url($member->photo)
                         : null,
                     'display_order' => $member->display_order,
@@ -104,7 +96,7 @@ class PublicController extends Controller
         ]);
     }
 
-    // Partenaires (publique)
+    // ✅ Partenaires (publique) — retourne logo_url correctement
     public function partners()
     {
         $partners = Partner::orderBy('display_order')->get()->map(function ($p) {
@@ -114,6 +106,8 @@ class PublicController extends Controller
                 'logo_url'     => $p->logo ? Storage::url($p->logo) : null,
                 'contribution' => $p->contribution,
                 'website'      => $p->website,
+                'tier'         => $p->tier ?? null,
+                'email'        => $p->email ?? null,
             ];
         });
 
