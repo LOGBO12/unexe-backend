@@ -18,14 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
-            'role'             => \App\Http\Middleware\RoleMiddleware::class,
-            'can.access.forum' => \App\Http\Middleware\CanAccessForumMiddleware::class,
-            'profile.complete' => \App\Http\Middleware\ProfileCompleteMiddleware::class,
+            'verified'          => \App\Http\Middleware\EnsureEmailIsVerified::class,
+            'role'              => \App\Http\Middleware\RoleMiddleware::class,
+            'can_access_forum'  => \App\Http\Middleware\CanAccessForumMiddleware::class,
+            'profile_complete'  => \App\Http\Middleware\ProfileCompleteMiddleware::class,
+            'can.access.forum'  => \App\Http\Middleware\CanAccessForumMiddleware::class,
+            'profile.complete'  => \App\Http\Middleware\ProfileCompleteMiddleware::class,
         ]);
-
-        //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
     })->create();
