@@ -24,7 +24,18 @@ class InvitationController extends Controller
             'email'         => 'required|email',
             'role'          => 'required|in:comite,candidat',
             'department_id' => 'nullable|exists:departments,id',
+            'year'          => 'nullable|in:1,2', // ← AJOUT
         ]);
+
+        // Si candidat : département ET année obligatoires
+        if ($data['role'] === 'candidat') {
+            if (empty($data['department_id'])) {
+                return response()->json(['message' => 'Le département est obligatoire pour un candidat.'], 422);
+            }
+            if (empty($data['year'])) {
+                return response()->json(['message' => "L'année d'étude est obligatoire pour un candidat."], 422);
+            }
+        }
 
         // Vérifier que l'email n'est pas déjà utilisé
         if (User::where('email', $data['email'])->exists()) {
@@ -69,12 +80,13 @@ class InvitationController extends Controller
             'is_profile_complete'   => false,
         ]);
 
-        // Si candidat invité, créer l'entrée candidate
+        // Si candidat invité, créer l'entrée candidate avec département ET année
         if ($data['role'] === 'candidat' && !empty($data['department_id'])) {
             Candidate::create([
                 'user_id'       => $user->id,
                 'department_id' => $data['department_id'],
-                'status'        => 'validated', // candidat direct = déjà validé
+                'year'          => $data['year'],   // ← AJOUT
+                'status'        => 'validated',      // candidat direct = déjà validé
                 'validated_by'  => $request->user()->id,
                 'validated_at'  => Carbon::now(),
             ]);
@@ -96,7 +108,7 @@ class InvitationController extends Controller
             $request->user(),
             $data['role'] === 'comite' ? 'invite_comite' : 'invite_candidat',
             $user,
-            ['email' => $data['email'], 'department_id' => $data['department_id'] ?? null]
+            ['email' => $data['email'], 'department_id' => $data['department_id'] ?? null, 'year' => $data['year'] ?? null] // ← year dans le log
         );
 
         return response()->json([
@@ -104,24 +116,23 @@ class InvitationController extends Controller
         ], 201);
     }
 
-       public function checkToken(string $token)
-{
-    $invitation = Invitation::where('token', $token)->first();
+    public function checkToken(string $token)
+    {
+        $invitation = Invitation::where('token', $token)->first();
 
-    if (!$invitation) {
-        return response()->json(['message' => 'Invitation introuvable.'], 404);
+        if (!$invitation) {
+            return response()->json(['message' => 'Invitation introuvable.'], 404);
+        }
+
+        if (!$invitation->isValid()) {
+            return response()->json(['message' => 'Invitation expirée ou déjà utilisée.'], 410);
+        }
+
+        return response()->json([
+            'email' => $invitation->email,
+            'role'  => $invitation->role,
+        ]);
     }
-
-    if (!$invitation->isValid()) {
-        return response()->json(['message' => 'Invitation expirée ou déjà utilisée.'], 410);
-    }
-
-    return response()->json([
-        'email' => $invitation->email,
-        'role'  => $invitation->role,
-    ]);
-}
-
 
     // Liste des invitations envoyées
     public function index(Request $request)
@@ -134,63 +145,59 @@ class InvitationController extends Controller
     }
 
     public function cancel(Request $request, int $id)
-{
-    $invitation = Invitation::findOrFail($id);
+    {
+        $invitation = Invitation::findOrFail($id);
 
-    if ($invitation->used_at) {
-        return response()->json(['message' => 'Invitation déjà utilisée.'], 422);
+        if ($invitation->used_at) {
+            return response()->json(['message' => 'Invitation déjà utilisée.'], 422);
+        }
+
+        $user = User::where('email', $invitation->email)
+                    ->where('is_profile_complete', false)
+                    ->first();
+
+        if ($user) {
+            $user->delete();
+        }
+
+        $invitation->delete();
+
+        return response()->json(['message' => 'Invitation annulée.']);
     }
 
-    // ✅ Supprimer aussi l'utilisateur créé si son profil n'est pas complet
-    $user = User::where('email', $invitation->email)
-                ->where('is_profile_complete', false)
-                ->first();
+    public function activate(Request $request, string $token)
+    {
+        $data = $request->validate([
+            'password'              => 'required|string|min:8|confirmed',
+            'password_confirmation' => 'required',
+        ]);
 
-    if ($user) {
-        $user->delete(); // supprime d'abord le user (FK)
+        $invitation = Invitation::where('token', $token)->first();
+
+        if (!$invitation) {
+            return response()->json(['message' => 'Invitation introuvable.'], 404);
+        }
+
+        if (!$invitation->isValid()) {
+            return response()->json(['message' => 'Invitation expirée ou déjà utilisée.'], 410);
+        }
+
+        $user = User::where('email', $invitation->email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur introuvable.'], 404);
+        }
+
+        $user->update([
+            'password' => Hash::make($data['password']),
+        ]);
+
+        $invitation->update(['used_at' => Carbon::now()]);
+
+        return response()->json([
+            'message' => 'Compte activé avec succès.',
+            'email'   => $invitation->email,
+            'role'    => $invitation->role,
+        ]);
     }
-
-    $invitation->delete();
-
-    return response()->json(['message' => 'Invitation annulée.']);
-}
-
-// ✅ Nouvelle méthode activate — définir le mot de passe via le token
-public function activate(Request $request, string $token)
-{
-    $data = $request->validate([
-        'password'              => 'required|string|min:8|confirmed',
-        'password_confirmation' => 'required',
-    ]);
-
-    $invitation = Invitation::where('token', $token)->first();
-
-    if (!$invitation) {
-        return response()->json(['message' => 'Invitation introuvable.'], 404);
-    }
-
-    if (!$invitation->isValid()) {
-        return response()->json(['message' => 'Invitation expirée ou déjà utilisée.'], 410);
-    }
-
-    $user = User::where('email', $invitation->email)->first();
-
-    if (!$user) {
-        return response()->json(['message' => 'Utilisateur introuvable.'], 404);
-    }
-
-    // Mettre à jour le mot de passe
-    $user->update([
-        'password' => Hash::make($data['password']),
-    ]);
-
-    // Marquer l'invitation comme utilisée
-    $invitation->update(['used_at' => Carbon::now()]);
-
-    return response()->json([
-        'message' => 'Compte activé avec succès.',
-        'email'   => $invitation->email,
-        'role'    => $invitation->role,
-    ]);
-}
 }

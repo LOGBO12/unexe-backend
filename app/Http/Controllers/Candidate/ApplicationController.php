@@ -17,6 +17,50 @@ class ApplicationController extends Controller
 {
     // ==================== CANDIDAT ====================
 
+    /**
+     * Documents attendus selon l'année
+     * 
+     * 1ère année :
+     *   - cv
+     *   - releve_bac
+     *   - fiche_preinscription_1
+     * 
+     * 2ème année :
+     *   - cv
+     *   - releve_bac
+     *   - fiche_preinscription_1
+     *   - validation_1ere_annee  (fiche de validation OU relevé de notes 1ère année)
+     *   - fiche_preinscription_2
+     */
+    private function getDocumentRules(string $year): array
+    {
+        $base = [
+            'documents'                       => 'nullable|array',
+            'documents[cv]'                   => 'nullable|file|mimes:pdf|max:2048',
+            'documents[releve_bac]'            => 'nullable|file|mimes:pdf|max:2048',
+            'documents[fiche_preinscription_1]'=> 'nullable|file|mimes:pdf|max:2048',
+        ];
+
+        if ($year === '2') {
+            $base['documents[validation_1ere_annee]'] = 'nullable|file|mimes:pdf|max:2048';
+            $base['documents[fiche_preinscription_2]'] = 'nullable|file|mimes:pdf|max:2048';
+        }
+
+        return $base;
+    }
+
+    private function getRequiredDocs(string $year): array
+    {
+        $base = ['cv', 'releve_bac', 'fiche_preinscription_1'];
+
+        if ($year === '2') {
+            $base[] = 'validation_1ere_annee';
+            $base[] = 'fiche_preinscription_2';
+        }
+
+        return $base;
+    }
+
     // Soumettre un dossier de candidature
     public function store(Request $request)
     {
@@ -36,27 +80,58 @@ class ApplicationController extends Controller
             'matricule'         => 'required|string|max:50',
             'phone'             => 'required|string|max:20',
             'motivation_letter' => 'required|string|min:100|max:2000',
-            'documents'         => 'nullable|array',
-            'documents.cv'      => 'nullable|file|mimes:pdf|max:2048',
-            'documents.notes'   => 'nullable|file|mimes:pdf|max:2048',
-            'documents.photo'   => 'nullable|file|mimes:jpg,jpeg,png|max:1024',
         ]);
+
+        $year = $data['year'];
+
+        // Valider les documents selon l'année
+        $request->validate($this->getDocumentRules($year));
+
+        // Vérifier que tous les documents requis sont présents
+        $requiredDocs = $this->getRequiredDocs($year);
+        $missingDocs  = [];
+
+        foreach ($requiredDocs as $docKey) {
+            if (!$request->hasFile("documents[{$docKey}]") &&
+                !$request->hasFile("documents.{$docKey}")) {
+                $missingDocs[] = $docKey;
+            }
+        }
+
+        // Essai avec le format multipart standard
+        if (!empty($missingDocs)) {
+            // Vérifier avec la notation avec point
+            $allFiles = $request->allFiles();
+            $docFiles = $allFiles['documents'] ?? [];
+            $stillMissing = [];
+            foreach ($requiredDocs as $docKey) {
+                if (!isset($docFiles[$docKey])) {
+                    $stillMissing[] = $docKey;
+                }
+            }
+            if (!empty($stillMissing)) {
+                return response()->json([
+                    'message' => 'Des documents obligatoires sont manquants.',
+                    'missing' => $stillMissing,
+                ], 422);
+            }
+        }
 
         // Upload des documents
         $uploadedDocs = [];
+        $allFiles     = $request->allFiles();
+        $docFiles     = $allFiles['documents'] ?? [];
 
-        if ($request->hasFile('documents')) {
-            foreach ($request->file('documents') as $key => $file) {
-                $path = $file->store("applications/{$user->id}", 'public');
-                $uploadedDocs[$key] = $path;
-            }
+        foreach ($docFiles as $key => $file) {
+            $path = $file->store("applications/{$user->id}", 'public');
+            $uploadedDocs[$key] = $path;
         }
 
         $application = Application::create([
             'user_id'           => $user->id,
             'department_id'     => $data['department_id'],
             'filiere'           => $data['filiere'],
-            'year'              => $data['year'],
+            'year'              => $year,
             'matricule'         => $data['matricule'],
             'phone'             => $data['phone'],
             'motivation_letter' => $data['motivation_letter'],
@@ -79,7 +154,7 @@ class ApplicationController extends Controller
 
         if (!$application) {
             return response()->json([
-                'message' => 'Aucun dossier soumis.',
+                'message'     => 'Aucun dossier soumis.',
                 'application' => null,
             ]);
         }
@@ -95,7 +170,6 @@ class ApplicationController extends Controller
         $query = Application::with('user', 'department', 'reviewedBy')
             ->orderBy('created_at', 'desc');
 
-        // Filtres
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
@@ -118,7 +192,6 @@ class ApplicationController extends Controller
 
         $applications = $query->paginate(20);
 
-        // Stats rapides en en-tête
         $stats = [
             'total'     => Application::count(),
             'pending'   => Application::where('status', 'pending')->count(),
@@ -132,7 +205,7 @@ class ApplicationController extends Controller
         ]);
     }
 
-    // Voir un dossier en détail
+    // Voir un dossier en détail avec URLs des documents
     public function show(int $id)
     {
         $application = Application::with(
@@ -141,13 +214,23 @@ class ApplicationController extends Controller
             'reviewedBy'
         )->findOrFail($id);
 
-        // Ajouter les URLs des documents
+        // Ajouter les URLs et labels des documents
         if ($application->documents) {
+            $docLabels = [
+                'cv'                    => 'Curriculum Vitæ',
+                'releve_bac'            => 'Relevé de notes du BAC',
+                'fiche_preinscription_1'=> 'Fiche de préinscription 1ère année',
+                'validation_1ere_annee' => 'Fiche de validation / Relevé 1ère année',
+                'fiche_preinscription_2'=> 'Fiche de préinscription 2ème année',
+            ];
+
             $docs = [];
             foreach ($application->documents as $key => $path) {
                 $docs[$key] = [
-                    'path' => $path,
-                    'url'  => Storage::url($path),
+                    'key'   => $key,
+                    'label' => $docLabels[$key] ?? $key,
+                    'path'  => $path,
+                    'url'   => Storage::url($path),
                 ];
             }
             $application->documents_urls = $docs;
@@ -181,7 +264,7 @@ class ApplicationController extends Controller
             'review_note' => $data['review_note'] ?? null,
         ]);
 
-        // Créer le profil candidat
+        // Créer / mettre à jour le profil candidat
         Candidate::updateOrCreate(
             ['user_id' => $application->user_id],
             [
@@ -196,12 +279,12 @@ class ApplicationController extends Controller
             ]
         );
 
-        // Envoyer l'email de notification
+        // Envoyer l'email de validation
         Mail::to($application->user->email)->send(
             new CandidateValidated($application)
         );
 
-        // Logger l'action (traçabilité)
+        // Logger l'action
         ActionLog::log(
             $request->user(),
             'validate_candidate',
