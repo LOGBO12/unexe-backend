@@ -3,114 +3,126 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
-use App\Models\Candidate;
 use App\Models\CommitteeMember;
 use App\Models\CommitteePage;
 use App\Models\Partner;
-use App\Models\Department;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class PublicController extends Controller
 {
-    // Candidats validés (page publique)
-    public function candidates(Request $request)
+    /**
+     * GET /api/public/candidates
+     */
+    public function candidates()
     {
-        $query = Candidate::with('user', 'department')
-            ->where('status', 'validated')
-            ->whereNotNull('photo')
-            ->orderBy('department_id')
-            ->orderBy('year');
+        try {
+            $candidates = \App\Models\User::where('role', 'candidat')
+                ->whereHas('candidate', fn($q) => $q->where('status', 'validated'))
+                ->with('candidate')
+                ->get()
+                ->map(fn($u) => [
+                    'id'         => $u->id,
+                    'name'       => $u->name,
+                    'photo_url'  => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                    'department' => $u->candidate?->department,
+                    'year'       => $u->candidate?->year,
+                    'filiere'    => $u->candidate?->filiere,
+                    'bio'        => $u->candidate?->bio,
+                ]);
 
-        if ($request->has('department_id')) {
-            $query->where('department_id', $request->department_id);
+            return response()->json($candidates);
+        } catch (\Exception $e) {
+            Log::error('[Public/candidates] ' . $e->getMessage());
+            return response()->json([]);
         }
-        if ($request->has('year')) {
-            $query->where('year', $request->year);
-        }
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->whereHas('user', function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%");
-            });
-        }
-
-        $candidates = $query->get()->map(function ($candidate) {
-            return [
-                'id'              => $candidate->id,
-                'name'            => $candidate->user->name,
-                'filiere'         => $candidate->filiere,
-                'year'            => $candidate->year,
-                'bio'             => $candidate->bio,
-                'photo_url'       => $candidate->photo
-                    ? Storage::url($candidate->photo)
-                    : null,
-                'department'      => $candidate->department->name,
-                'department_slug' => $candidate->department->slug,
-            ];
-        });
-
-        $grouped     = $candidates->groupBy('department');
-        $departments = Department::withCount([
-            'candidates as validated_count' => fn($q) =>
-                $q->where('status', 'validated')->whereNotNull('photo')
-        ])->get();
-
-        return response()->json([
-            'candidates'  => $grouped,
-            'departments' => $departments,
-        ]);
     }
 
-    // Page comité (publique)
+    /**
+     * GET /api/public/committee
+     *
+     * Retourne { page: {...}, members: [...] }
+     * Gère le cas où CommitteePage est vide (table vide = null, pas d'erreur)
+     */
     public function committee()
     {
-        $page = CommitteePage::first();
+        try {
+            // ── Page publique du comité ───────────────────────────────────
+            $page     = CommitteePage::first();
+            $pageData = null;
 
-        $members = CommitteeMember::with('user')
-            ->orderBy('display_order')
-            ->get()
-            ->map(function ($member) {
-                return [
-                    'id'            => $member->id,
-                    'name'          => $member->user->name,
-                    'position'      => $member->position,
-                    'bio'           => $member->bio,
-                    'photo_url'     => $member->photo
-                        ? Storage::url($member->photo)
+            if ($page) {
+                $pageData = [
+                    'id'                  => $page->id,
+                    'project_description' => $page->project_description,
+                    'vision'              => $page->vision,
+                    // objectives est casté en array dans le modèle via $casts
+                    'objectives'          => $page->objectives ?? [],
+                    'team_photo'          => $page->team_photo,
+                    // URL absolue — asset() génère https://domain.com/storage/...
+                    'team_photo_url'      => $page->team_photo
+                        ? asset('storage/' . $page->team_photo)
                         : null,
-                    'display_order' => $member->display_order,
                 ];
-            });
+            }
 
-        return response()->json([
-            'page'    => $page ? [
-                'project_description' => $page->project_description,
-                'vision'              => $page->vision,
-                'objectives'          => $page->objectives,
-                'team_photo_url'      => $page->team_photo
-                    ? Storage::url($page->team_photo)
-                    : null,
-            ] : null,
-            'members' => $members,
-        ]);
+            // ── Membres du comité ─────────────────────────────────────────
+            $members = CommitteeMember::with('user')
+                ->orderBy('display_order')
+                ->get()
+                ->map(fn($m) => [
+                    'id'        => $m->id,
+                    'name'      => $m->user?->name ?? 'Membre',
+                    'position'  => $m->position,
+                    'bio'       => $m->bio,
+                    'photo_url' => $m->photo
+                        ? asset('storage/' . $m->photo)
+                        : ($m->user?->avatar
+                            ? asset('storage/' . $m->user->avatar)
+                            : null),
+                ]);
+
+            return response()->json([
+                'page'    => $pageData,
+                'members' => $members,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('[Public/committee] ' . $e->getMessage()
+                . ' in ' . $e->getFile() . ':' . $e->getLine());
+
+            // Retourner le message d'erreur pour faciliter le debug
+            // (à retirer en production)
+            return response()->json([
+                'page'    => null,
+                'members' => [],
+                '_debug'  => $e->getMessage(),
+            ], 500);
+        }
     }
 
-    // ✅ Partenaires (publique) — retourne logo_url correctement
+    /**
+     * GET /api/public/partners
+     */
     public function partners()
     {
-        $partners = Partner::orderBy('display_order')->get()->map(function ($p) {
-            return [
-                'id'           => $p->id,
-                'name'         => $p->name,
-                'logo_url'     => $p->logo ? Storage::url($p->logo) : null,
-                'contribution' => $p->contribution,
-                'website'      => $p->website,
-                'tier'         => $p->tier ?? null,
-                'email'        => $p->email ?? null,
-            ];
-        });
+        try {
+            $partners = Partner::orderBy('display_order')
+                ->get()
+                ->map(fn($p) => [
+                    'id'            => $p->id,
+                    'name'          => $p->name,
+                    'website'       => $p->website,
+                    'display_order' => $p->display_order,
+                    'logo'          => $p->logo,
+                    'logo_url'      => $p->logo
+                        ? asset('storage/' . $p->logo)
+                        : null,
+                ]);
 
-        return response()->json($partners);
+            return response()->json($partners);
+        } catch (\Exception $e) {
+            Log::error('[Public/partners] ' . $e->getMessage());
+            return response()->json([]);
+        }
     }
 }

@@ -6,24 +6,25 @@ use Illuminate\Database\Eloquent\Model;
 
 class CommitteePage extends Model
 {
-    protected $table = 'committee_page';
-
     protected $fillable = [
         'project_description',
         'vision',
         'objectives',
         'team_photo',
-        'updated_by',
     ];
 
     protected $casts = [
-        'objectives' => 'array', // stocké en JSON, retourné en tableau
+        // objectives est stocké en JSON dans la DB
+        'objectives' => 'array',
     ];
 
-    // ==================== RELATIONS ====================
-
-    public function updatedBy()
+    /**
+     * URL complète de la photo (accesseur)
+     */
+    public function getTeamPhotoUrlAttribute(): ?string
     {
-        return $this->belongsTo(User::class, 'updated_by');
+        return $this->team_photo
+            ? asset('storage/' . $this->team_photo)
+            : null;
     }
 }

@@ -21,12 +21,14 @@ use App\Http\Controllers\Admin\PartnerController;
 // Controllers forum
 use App\Http\Controllers\Community\ForumController;
 use App\Http\Controllers\Admin\AdminProfileController;
+use App\Http\Controllers\Admin\RegistrationController;
 
 // ===================================================
 // ROUTES PUBLIQUES (sans authentification)
 // ===================================================
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
+Route::get('/registration-status', [RegistrationController::class, 'status']);
 
 
 Route::get('/invitation/{token}',          [InvitationController::class, 'checkToken']);
@@ -92,6 +94,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/replies/{id}/official', [ForumController::class, 'markOfficial']);
         });
     });
+
+    Route::middleware(['auth:sanctum', 'role:super_admin'])->group(function () {
+    Route::get('/admin/registration-settings',              [RegistrationController::class, 'show']);
+    Route::put('/admin/registration-settings',              [RegistrationController::class, 'update']);
+    Route::delete('/admin/registration-settings/deadline',  [RegistrationController::class, 'clearDeadline']);
+});
+
 
     // -----------------------------------------------
     // COMITÉ & ADMIN
