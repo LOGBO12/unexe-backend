@@ -3,9 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory; // ← AJOUTER cet import
 
 class CommitteePage extends Model
 {
+    use HasFactory;
+
+    protected $table = 'committee_page';
+
     protected $fillable = [
         'project_description',
         'vision',
@@ -14,13 +19,9 @@ class CommitteePage extends Model
     ];
 
     protected $casts = [
-        // objectives est stocké en JSON dans la DB
         'objectives' => 'array',
     ];
 
-    /**
-     * URL complète de la photo (accesseur)
-     */
     public function getTeamPhotoUrlAttribute(): ?string
     {
         return $this->team_photo

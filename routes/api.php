@@ -39,6 +39,7 @@ Route::prefix('public')->group(function () {
     Route::get('/candidates', [PublicController::class, 'candidates']);
     Route::get('/committee',  [PublicController::class, 'committee']);
     Route::get('/partners',   [PublicController::class, 'partners']);
+    Route::get('/departments', [PublicController::class, 'departments']);
 });
 
 // Partenaires (lecture publique pour admin front)
@@ -121,12 +122,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/invite',           [InvitationController::class, 'send']);
         Route::get('/invitations',       [InvitationController::class, 'index']);
         Route::delete('/invitations/{id}', [InvitationController::class, 'cancel']);
-
+        
         // Comité — Membres
         Route::get('/committee/members',         [CommitteeController::class, 'index']);
         Route::post('/committee/members',        [CommitteeController::class, 'store']);
         Route::put('/committee/members/{id}',    [CommitteeController::class, 'update']);
         Route::delete('/committee/members/{id}', [CommitteeController::class, 'destroy']);
+        Route::get('/committee/available-users', [CommitteeController::class, 'availableUsers']);
 
         // Comité — Page publique
         Route::get('/committee/page', [CommitteeController::class, 'getPage']);

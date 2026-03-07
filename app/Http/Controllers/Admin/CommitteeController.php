@@ -92,6 +92,19 @@ class CommitteeController extends Controller
         ]);
     }
 
+    // Ajouter cette méthode dans CommitteeController
+public function availableUsers()
+{
+    // Tous les users avec rôle comite OU super_admin
+    $alreadyAdded = CommitteeMember::pluck('user_id')->toArray();
+
+    $users = \App\Models\User::whereIn('role', ['comite', 'super_admin'])
+        ->whereNotIn('id', $alreadyAdded)
+        ->get(['id', 'name', 'email', 'role', 'avatar']);
+
+    return response()->json($users);
+}
+
     public function updatePage(Request $request)
     {
         Log::info('[CommitteePage] updatePage — hasFile: ' . ($request->hasFile('team_photo') ? 'OUI' : 'NON'));

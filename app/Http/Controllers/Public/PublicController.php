@@ -13,29 +13,53 @@ class PublicController extends Controller
     /**
      * GET /api/public/candidates
      */
-    public function candidates()
-    {
-        try {
-            $candidates = \App\Models\User::where('role', 'candidat')
-                ->whereHas('candidate', fn($q) => $q->where('status', 'validated'))
-                ->with('candidate')
-                ->get()
-                ->map(fn($u) => [
-                    'id'         => $u->id,
-                    'name'       => $u->name,
-                    'photo_url'  => $u->avatar ? asset('storage/' . $u->avatar) : null,
-                    'department' => $u->candidate?->department,
-                    'year'       => $u->candidate?->year,
-                    'filiere'    => $u->candidate?->filiere,
-                    'bio'        => $u->candidate?->bio,
-                ]);
+   // ✅ APRÈS — remplacer toute la méthode candidates()
+public function candidates()
+{
+    try {
+        $departments = \App\Models\Department::orderBy('name')->get(['id', 'name', 'slug']);
 
-            return response()->json($candidates);
-        } catch (\Exception $e) {
-            Log::error('[Public/candidates] ' . $e->getMessage());
-            return response()->json([]);
+        $users = \App\Models\User::where('role', 'candidat')
+            ->whereHas('candidate', fn($q) => $q->where('status', 'validated'))
+            ->with('candidate.department')  // ← charger department en eager loading
+            ->get();
+
+        // Grouper par nom de département
+        $grouped = [];
+        foreach ($users as $u) {
+            $deptName = $u->candidate?->department?->name ?? 'Autre';
+            $grouped[$deptName][] = [
+                'id'              => $u->id,
+                'name'            => $u->name,
+                'photo_url'       => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                'department'      => $deptName,
+                'department_slug' => $u->candidate?->department?->slug ?? '',
+                'year'            => $u->candidate?->year,
+                'filiere'         => $u->candidate?->filiere,
+                'bio'             => $u->candidate?->bio,
+            ];
         }
+
+        return response()->json([
+            'candidates'  => $grouped,
+            'departments' => $departments,
+        ]);
+
+    } catch (\Exception $e) {
+        \Illuminate\Support\Facades\Log::error('[Public/candidates] ' . $e->getMessage());
+        return response()->json(['candidates' => [], 'departments' => []]);
     }
+}
+
+    public function departments()
+{
+    try {
+        $departments = \App\Models\Department::orderBy('name')->get(['id', 'name', 'slug']);
+        return response()->json(['departments' => $departments]);
+    } catch (\Exception $e) {
+        return response()->json(['departments' => []]);
+    }
+}
 
     /**
      * GET /api/public/committee
