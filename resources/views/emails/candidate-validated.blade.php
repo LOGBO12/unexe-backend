@@ -12,5 +12,5 @@
 
     <p>Connectez-vous pour <strong>compléter votre profil</strong>. Cette étape est obligatoire pour finaliser votre participation.</p>
 
-    <a href="{{ $loginUrl }}" class="btn">Compléter mon profil</a>
-@endsection
+    <a href="{{ $loginUrl }}?for=candidat" class="btn">Accéder à mon espace candidat</a>
+@endsection 
