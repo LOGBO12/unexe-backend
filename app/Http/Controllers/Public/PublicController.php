@@ -13,18 +13,19 @@ class PublicController extends Controller
     /**
      * GET /api/public/candidates
      */
-   // ✅ APRÈS — remplacer toute la méthode candidates()
-public function candidates()
+   public function candidates()
 {
     try {
         $departments = \App\Models\Department::orderBy('name')->get(['id', 'name', 'slug']);
 
         $users = \App\Models\User::where('role', 'candidat')
-            ->whereHas('candidate', fn($q) => $q->where('status', 'validated'))
-            ->with('candidate.department')  // ← charger department en eager loading
+            ->whereHas('candidate', fn($q) => $q
+                ->where('status', 'validated')
+                ->where('is_visible', true)   // ← AJOUTER
+            )
+            ->with('candidate.department')
             ->get();
 
-        // Grouper par nom de département
         $grouped = [];
         foreach ($users as $u) {
             $deptName = $u->candidate?->department?->name ?? 'Autre';
@@ -37,6 +38,8 @@ public function candidates()
                 'year'            => $u->candidate?->year,
                 'filiere'         => $u->candidate?->filiere,
                 'bio'             => $u->candidate?->bio,
+                'is_leader'       => $u->candidate?->is_leader ?? false,  // ← AJOUTER
+                'current_phase'   => $u->candidate?->current_phase ?? 1,  // ← AJOUTER
             ];
         }
 

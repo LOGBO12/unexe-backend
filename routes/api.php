@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\PartnerController;
 use App\Http\Controllers\Community\ForumController;
 use App\Http\Controllers\Admin\AdminProfileController;
 use App\Http\Controllers\Admin\RegistrationController;
+use App\Http\Controllers\Admin\CompetitionController;
 
 // ===================================================
 // ROUTES PUBLIQUES (sans authentification)
@@ -29,6 +30,7 @@ use App\Http\Controllers\Admin\RegistrationController;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 Route::get('/registration-status', [RegistrationController::class, 'status']);
+Route::get('/leaderboard', [CompetitionController::class, 'publicLeaderboard']);
 
 
 Route::get('/invitation/{token}',          [InvitationController::class, 'checkToken']);
@@ -71,6 +73,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Candidature
         Route::post('/applications',  [ApplicationController::class, 'store']);
         Route::get('/my-application', [ApplicationController::class, 'myApplication']);
+        Route::get('/my-scores', [CompetitionController::class, 'myScores']);
+
     });
 
     // -----------------------------------------------
@@ -138,5 +142,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/partners',       [PartnerController::class, 'store']);
         Route::put('/partners/{id}',   [PartnerController::class, 'update']);
         Route::delete('/partners/{id}', [PartnerController::class, 'destroy']);
+
+        Route::prefix('competition')->group(function () {
+    Route::get('/phases',                           [CompetitionController::class, 'phases']);
+    Route::post('/setup',                           [CompetitionController::class, 'setup']);
+    Route::put('/phases/{id}/activate',             [CompetitionController::class, 'activatePhase']);
+    Route::put('/phases/{id}/complete',             [CompetitionController::class, 'completePhase']);
+    Route::get('/phases/{id}/candidates',           [CompetitionController::class, 'phaseCandidates']);
+    Route::post('/scores/{scoreId}',                [CompetitionController::class, 'gradeCandidate']);
+});
     });
 });
