@@ -22,10 +22,15 @@ class Candidate extends Model
         'validated_by',
         'validated_at',
         'rejection_reason',
+        'is_visible',
+        'current_phase',
+        'is_leader',
     ];
 
     protected $casts = [
         'validated_at' => 'datetime',
+        'is_visible'   => 'boolean',
+        'is_leader'    => 'boolean',
     ];
 
     // ==================== RELATIONS ====================
@@ -43,6 +48,14 @@ class Candidate extends Model
     public function validatedBy()
     {
         return $this->belongsTo(User::class, 'validated_by');
+    }
+
+    /**
+     * Scores du candidat dans les phases du concours
+     */
+    public function scores()
+    {
+        return $this->hasMany(CandidateScore::class, 'candidate_id');
     }
 
     // ==================== SCOPES ====================

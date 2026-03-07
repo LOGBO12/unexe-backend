@@ -143,13 +143,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/partners/{id}',   [PartnerController::class, 'update']);
         Route::delete('/partners/{id}', [PartnerController::class, 'destroy']);
 
-        Route::prefix('competition')->group(function () {
-    Route::get('/phases',                           [CompetitionController::class, 'phases']);
-    Route::post('/setup',                           [CompetitionController::class, 'setup']);
-    Route::put('/phases/{id}/activate',             [CompetitionController::class, 'activatePhase']);
-    Route::put('/phases/{id}/complete',             [CompetitionController::class, 'completePhase']);
-    Route::get('/phases/{id}/candidates',           [CompetitionController::class, 'phaseCandidates']);
-    Route::post('/scores/{scoreId}',                [CompetitionController::class, 'gradeCandidate']);
+     Route::prefix('competition')->group(function () {
+    Route::get('/phases',                 [CompetitionController::class, 'phases']);
+    Route::post('/setup',                 [CompetitionController::class, 'setup']);
+    Route::delete('/reset',               [CompetitionController::class, 'reset']);        
+    Route::put('/phases/{id}/activate',   [CompetitionController::class, 'activatePhase']);
+    Route::put('/phases/{id}/complete',   [CompetitionController::class, 'completePhase']);
+    Route::get('/phases/{id}/candidates', [CompetitionController::class, 'phaseCandidates']);
+    Route::post('/scores/{scoreId}',      [CompetitionController::class, 'gradeCandidate']);
 });
     });
 });

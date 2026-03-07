@@ -19,7 +19,6 @@ class CompetitionController extends Controller
 
     /**
      * GET /admin/competition/phases
-     * Liste toutes les phases + stats rapides
      */
     public function phases()
     {
@@ -40,24 +39,29 @@ class CompetitionController extends Controller
                 ]);
             });
 
+        // Le concours peut être réinitialisé seulement si toutes les phases sont "pending"
+        $canReset = $phases->count() > 0
+            && $phases->every(fn($p) => $p['status'] === 'pending');
+
         return response()->json([
             'phases'        => $phases,
             'has_phases'    => $phases->count() > 0,
             'active_phase'  => CompetitionPhase::where('status', 'active')->first(),
+            'can_reset'     => $canReset,
         ]);
     }
 
     /**
      * POST /admin/competition/setup
-     * Créer les phases du concours (nombre défini par super_admin)
-     * Body: { total_phases: 3, phases: [{ name: "...", description: "..." }, ...] }
+     * Créer les phases. Si des phases "pending" existent déjà, elles sont d'abord supprimées.
      */
     public function setup(Request $request)
     {
-        // Empêcher de refaire le setup si des phases existent déjà
-        if (CompetitionPhase::count() > 0) {
+        // Vérifier qu'aucune phase n'est active ou terminée
+        $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
+        if ($lockedPhases > 0) {
             return response()->json([
-                'message' => 'Le concours a déjà été configuré. Impossible de recréer les phases.'
+                'message' => 'Impossible de reconfigurer : une ou plusieurs phases sont déjà actives ou terminées.'
             ], 422);
         }
 
@@ -74,18 +78,25 @@ class CompetitionController extends Controller
             ], 422);
         }
 
-        $created = [];
-        foreach ($data['phases'] as $i => $phaseData) {
-            $created[] = CompetitionPhase::create([
-                'phase_number' => $i + 1,
-                'name'         => $phaseData['name'],
-                'description'  => $phaseData['description'] ?? null,
-                'total_phases' => $data['total_phases'],
-                'status'       => $i === 0 ? 'pending' : 'pending',
-                'is_final'     => ($i + 1) === $data['total_phases'],
-                'created_by'   => $request->user()->id,
-            ]);
-        }
+        DB::transaction(function () use ($data, $request) {
+            // Supprimer les anciennes phases "pending" (et leurs scores en cascade)
+            CompetitionPhase::where('status', 'pending')->delete();
+
+            // Recréer
+            foreach ($data['phases'] as $i => $phaseData) {
+                CompetitionPhase::create([
+                    'phase_number' => $i + 1,
+                    'name'         => $phaseData['name'],
+                    'description'  => $phaseData['description'] ?? null,
+                    'total_phases' => $data['total_phases'],
+                    'status'       => 'pending',
+                    'is_final'     => ($i + 1) === $data['total_phases'],
+                    'created_by'   => $request->user()->id,
+                ]);
+            }
+        });
+
+        $created = CompetitionPhase::orderBy('phase_number')->get();
 
         ActionLog::log($request->user(), 'setup_competition', null, [
             'total_phases' => $data['total_phases'],
@@ -98,8 +109,27 @@ class CompetitionController extends Controller
     }
 
     /**
+     * DELETE /admin/competition/reset
+     * Réinitialiser entièrement le concours (uniquement si toutes les phases sont "pending")
+     */
+    public function reset(Request $request)
+    {
+        $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
+        if ($lockedPhases > 0) {
+            return response()->json([
+                'message' => 'Impossible de réinitialiser : une ou plusieurs phases sont actives ou terminées.'
+            ], 422);
+        }
+
+        CompetitionPhase::where('status', 'pending')->delete();
+
+        ActionLog::log($request->user(), 'reset_competition', null, []);
+
+        return response()->json(['message' => 'Concours réinitialisé. Vous pouvez reconfigurer les phases.']);
+    }
+
+    /**
      * PUT /admin/competition/phases/{id}/activate
-     * Activer une phase (une seule peut être active à la fois)
      */
     public function activatePhase(Request $request, int $id)
     {
@@ -113,7 +143,6 @@ class CompetitionController extends Controller
             return response()->json(['message' => 'Cette phase est déjà terminée.'], 422);
         }
 
-        // Vérifier que la phase précédente est complétée (sauf pour la phase 1)
         if ($phase->phase_number > 1) {
             $prev = CompetitionPhase::where('phase_number', $phase->phase_number - 1)->first();
             if ($prev && $prev->status !== 'completed') {
@@ -123,12 +152,10 @@ class CompetitionController extends Controller
             }
         }
 
-        // Désactiver toute phase active
         CompetitionPhase::where('status', 'active')->update(['status' => 'completed']);
 
         $phase->update(['status' => 'active']);
 
-        // Créer automatiquement les entrées de score (pending) pour les candidats éligibles
         $candidates = $this->getEligibleCandidates($phase);
         foreach ($candidates as $candidate) {
             CandidateScore::firstOrCreate([
@@ -140,70 +167,63 @@ class CompetitionController extends Controller
         }
 
         ActionLog::log($request->user(), 'activate_phase', $phase, [
-            'phase_number'      => $phase->phase_number,
-            'eligible_count'    => $candidates->count(),
+            'phase_number'   => $phase->phase_number,
+            'eligible_count' => $candidates->count(),
         ]);
 
         return response()->json([
-            'message'          => "Phase {$phase->phase_number} activée.",
-            'phase'            => $phase->fresh(),
-            'eligible_count'   => $candidates->count(),
+            'message'        => "Phase {$phase->phase_number} activée.",
+            'phase'          => $phase->fresh(),
+            'eligible_count' => $candidates->count(),
         ]);
     }
 
     /**
      * PUT /admin/competition/phases/{id}/complete
-     * Clôturer une phase manuellement
      */
-   public function completePhase(Request $request, int $id)
-{
-    $phase = CompetitionPhase::findOrFail($id);
+    public function completePhase(Request $request, int $id)
+    {
+        $phase = CompetitionPhase::findOrFail($id);
 
-    if ($phase->status !== 'active') {
-        return response()->json(['message' => 'Seule une phase active peut être clôturée.'], 422);
-    }
+        if ($phase->status !== 'active') {
+            return response()->json(['message' => 'Seule une phase active peut être clôturée.'], 422);
+        }
 
-    // Éliminer automatiquement les candidats encore "pending" (non notés)
-    $pendingScores = CandidateScore::where('phase_id', $phase->id)
-        ->where('status', 'pending')
-        ->with('candidate')
-        ->get();
+        $pendingScores = CandidateScore::where('phase_id', $phase->id)
+            ->where('status', 'pending')
+            ->with('candidate')
+            ->get();
 
-    foreach ($pendingScores as $score) {
-        $score->update([
-            'status'     => 'eliminated',
-            'comment'    => 'Éliminé automatiquement (non noté avant clôture)',
-            'graded_by'  => $request->user()->id,
-            'graded_at'  => now(),
+        foreach ($pendingScores as $score) {
+            $score->update([
+                'status'    => 'eliminated',
+                'comment'   => 'Éliminé automatiquement (non noté avant clôture)',
+                'graded_by' => $request->user()->id,
+                'graded_at' => now(),
+            ]);
+            $score->candidate?->update(['is_visible' => false]);
+        }
+
+        $phase->update(['status' => 'completed']);
+
+        $survivors = CandidateScore::where('phase_id', $phase->id)->where('status', 'continuing')->count();
+        $leaders   = CandidateScore::where('phase_id', $phase->id)->where('status', 'leader')->count();
+
+        ActionLog::log($request->user(), 'complete_phase', $phase, [
+            'phase_number'    => $phase->phase_number,
+            'auto_eliminated' => $pendingScores->count(),
+            'survivors'       => $survivors,
+            'leaders'         => $leaders,
         ]);
-        $score->candidate?->update(['is_visible' => false]);
+
+        return response()->json([
+            'message'         => "Phase {$phase->phase_number} clôturée.",
+            'phase'           => $phase->fresh(),
+            'auto_eliminated' => $pendingScores->count(),
+            'survivors'       => $survivors,
+            'leaders'         => $leaders,
+        ]);
     }
-
-    $phase->update(['status' => 'completed']);
-
-    // Compter les survivants
-    $survivors = CandidateScore::where('phase_id', $phase->id)
-        ->where('status', 'continuing')
-        ->count();
-    $leaders = CandidateScore::where('phase_id', $phase->id)
-        ->where('status', 'leader')
-        ->count();
-
-    ActionLog::log($request->user(), 'complete_phase', $phase, [
-        'phase_number'     => $phase->phase_number,
-        'auto_eliminated'  => $pendingScores->count(),
-        'survivors'        => $survivors,
-        'leaders'          => $leaders,
-    ]);
-
-    return response()->json([
-        'message'          => "Phase {$phase->phase_number} clôturée.",
-        'phase'            => $phase->fresh(),
-        'auto_eliminated'  => $pendingScores->count(),
-        'survivors'        => $survivors,
-        'leaders'          => $leaders,
-    ]);
-}
 
     // ──────────────────────────────────────────────────────────────────────────
     // NOTATION
@@ -211,7 +231,6 @@ class CompetitionController extends Controller
 
     /**
      * GET /admin/competition/phases/{id}/candidates
-     * Lister les candidats d'une phase avec leurs scores
      */
     public function phaseCandidates(Request $request, int $id)
     {
@@ -223,30 +242,27 @@ class CompetitionController extends Controller
             ->map(function ($score) use ($phase) {
                 $c = $score->candidate;
                 return [
-                    'score_id'       => $score->id,
-                    'candidate_id'   => $c->id,
-                    'name'           => $c->user?->name,
-                    'email'          => $c->user?->email,
-                    'photo_url'      => $c->user?->avatar
-                                        ? asset('storage/' . $c->user->avatar)
-                                        : null,
-                    'department'     => $c->department?->name,
-                    'department_slug'=> $c->department?->slug,
-                    'filiere'        => $c->filiere,
-                    'year'           => $c->year,
-                    'score'          => $score->score,
-                    'status'         => $score->status,
-                    'comment'        => $score->comment,
-                    'graded_by_name' => $score->gradedBy?->name,
-                    'graded_at'      => $score->graded_at,
-                    'current_phase'  => $c->current_phase,
-                    'is_leader'      => $c->is_leader,
+                    'score_id'        => $score->id,
+                    'candidate_id'    => $c->id,
+                    'name'            => $c->user?->name,
+                    'email'           => $c->user?->email,
+                    'photo_url'       => $c->user?->avatar ? asset('storage/' . $c->user->avatar) : null,
+                    'department'      => $c->department?->name,
+                    'department_slug' => $c->department?->slug,
+                    'filiere'         => $c->filiere,
+                    'year'            => $c->year,
+                    'score'           => $score->score,
+                    'status'          => $score->status,
+                    'comment'         => $score->comment,
+                    'graded_by_name'  => $score->gradedBy?->name,
+                    'graded_at'       => $score->graded_at,
+                    'current_phase'   => $c->current_phase,
+                    'is_leader'       => $c->is_leader,
                 ];
             })
             ->sortByDesc('score')
             ->values();
 
-        // Stats de la phase
         $stats = [
             'total'      => $scores->count(),
             'graded'     => $scores->where('score', '!=', null)->count(),
@@ -267,8 +283,6 @@ class CompetitionController extends Controller
 
     /**
      * POST /admin/competition/scores/{scoreId}
-     * Noter un candidat et décider s'il continue
-     * Body: { score: 15.5, status: "continuing"|"eliminated"|"leader", comment: "..." }
      */
     public function gradeCandidate(Request $request, int $scoreId)
     {
@@ -287,14 +301,12 @@ class CompetitionController extends Controller
             'comment' => 'nullable|string|max:500',
         ]);
 
-        // Vérification : "leader" uniquement sur la dernière phase
         if ($data['status'] === 'leader' && !$phase->is_final) {
             return response()->json([
                 'message' => 'Le statut "leader" ne peut être attribué que sur la phase finale.'
             ], 422);
         }
 
-        // Vérification : "continuing" impossible sur la dernière phase
         if ($data['status'] === 'continuing' && $phase->is_final) {
             return response()->json([
                 'message' => 'Sur la phase finale, le statut doit être "leader" ou "eliminated".'
@@ -303,44 +315,32 @@ class CompetitionController extends Controller
 
         $candidate = $scoreEntry->candidate;
 
-        // Mettre à jour la note
         $scoreEntry->update([
-            'score'      => $data['score'],
-            'status'     => $data['status'],
-            'comment'    => $data['comment'] ?? null,
-            'graded_by'  => $request->user()->id,
-            'graded_at'  => Carbon::now(),
+            'score'     => $data['score'],
+            'status'    => $data['status'],
+            'comment'   => $data['comment'] ?? null,
+            'graded_by' => $request->user()->id,
+            'graded_at' => Carbon::now(),
         ]);
 
-        // Mettre à jour le candidat selon la décision
         if ($data['status'] === 'eliminated') {
-            $candidate->update([
-                'is_visible'    => false,
-                'current_phase' => $phase->phase_number,
-            ]);
+            $candidate->update(['is_visible' => false, 'current_phase' => $phase->phase_number]);
         } elseif ($data['status'] === 'continuing') {
-            $candidate->update([
-                'current_phase' => $phase->phase_number + 1,
-                'is_visible'    => true,
-            ]);
+            $candidate->update(['current_phase' => $phase->phase_number + 1, 'is_visible' => true]);
         } elseif ($data['status'] === 'leader') {
-            $candidate->update([
-                'is_leader'     => true,
-                'is_visible'    => true,
-                'current_phase' => $phase->phase_number,
-            ]);
+            $candidate->update(['is_leader' => true, 'is_visible' => true, 'current_phase' => $phase->phase_number]);
         }
 
         ActionLog::log($request->user(), 'grade_candidate', $candidate, [
-            'phase'       => $phase->phase_number,
-            'score'       => $data['score'],
-            'status'      => $data['status'],
-            'candidate'   => $candidate->user?->name,
+            'phase'     => $phase->phase_number,
+            'score'     => $data['score'],
+            'status'    => $data['status'],
+            'candidate' => $candidate->user?->name,
         ]);
 
         return response()->json([
-            'message'    => 'Note enregistrée.',
-            'score_entry'=> $scoreEntry->fresh()->load('gradedBy'),
+            'message'     => 'Note enregistrée.',
+            'score_entry' => $scoreEntry->fresh()->load('gradedBy'),
         ]);
     }
 
@@ -348,15 +348,9 @@ class CompetitionController extends Controller
     // RÉSULTATS PUBLICS
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * GET /public/leaderboard
-     * Classement final public (uniquement si une phase finale est complétée)
-     */
     public function publicLeaderboard()
     {
-        $finalPhase = CompetitionPhase::where('is_final', true)
-            ->where('status', 'completed')
-            ->first();
+        $finalPhase = CompetitionPhase::where('is_final', true)->where('status', 'completed')->first();
 
         if (!$finalPhase) {
             return response()->json([
@@ -367,10 +361,7 @@ class CompetitionController extends Controller
             ]);
         }
 
-        // Tous les candidats avec leurs scores dans chaque phase
-        $phases = CompetitionPhase::where('status', 'completed')
-            ->orderBy('phase_number')
-            ->get();
+        $phases = CompetitionPhase::where('status', 'completed')->orderBy('phase_number')->get();
 
         $candidates = Candidate::with(['user', 'department', 'scores.phase'])
             ->whereHas('user')
@@ -415,13 +406,9 @@ class CompetitionController extends Controller
         ]);
     }
 
-    /**
-     * GET /candidate/my-scores
-     * Un candidat consulte ses propres notes et son classement
-     */
     public function myScores(Request $request)
     {
-        $user = $request->user();
+        $user      = $request->user();
         $candidate = $user->candidate;
 
         if (!$candidate) {
@@ -433,17 +420,11 @@ class CompetitionController extends Controller
             ->orderBy('phase_id')
             ->get()
             ->map(function ($s) use ($candidate) {
-                // Classement dans cette phase
-                $rank = null;
+                $rank  = null;
+                $total = null;
                 if ($s->score !== null) {
-                    $rank = CandidateScore::where('phase_id', $s->phase_id)
-                        ->whereNotNull('score')
-                        ->where('score', '>', $s->score)
-                        ->count() + 1;
-
-                    $total = CandidateScore::where('phase_id', $s->phase_id)
-                        ->whereNotNull('score')
-                        ->count();
+                    $rank  = CandidateScore::where('phase_id', $s->phase_id)->whereNotNull('score')->where('score', '>', $s->score)->count() + 1;
+                    $total = CandidateScore::where('phase_id', $s->phase_id)->whereNotNull('score')->count();
                 }
 
                 return [
@@ -452,8 +433,8 @@ class CompetitionController extends Controller
                     'score'         => $s->score,
                     'status'        => $s->status,
                     'comment'       => $s->comment,
-                    'rank'          => $rank ?? null,
-                    'total_graded'  => $total ?? null,
+                    'rank'          => $rank,
+                    'total_graded'  => $total,
                     'graded_at'     => $s->graded_at,
                 ];
             });
@@ -473,26 +454,17 @@ class CompetitionController extends Controller
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // HELPER PRIVÉ
+    // HELPER
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Retourne les candidats éligibles pour une phase donnée
-     */
     private function getEligibleCandidates(CompetitionPhase $phase)
     {
         if ($phase->phase_number === 1) {
-            // Phase 1 : tous les candidats validés et visibles
-            return Candidate::where('status', 'validated')
-                ->where('is_visible', true)
-                ->get();
+            return Candidate::where('status', 'validated')->where('is_visible', true)->get();
         }
 
-        // Phases suivantes : candidats qui ont "continuing" dans la phase précédente
         $prevPhase = CompetitionPhase::where('phase_number', $phase->phase_number - 1)->first();
-        if (!$prevPhase) {
-            return collect();
-        }
+        if (!$prevPhase) return collect();
 
         $continuingIds = CandidateScore::where('phase_id', $prevPhase->id)
             ->where('status', 'continuing')
