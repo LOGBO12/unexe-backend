@@ -7,25 +7,18 @@ use App\Models\CommitteeMember;
 use App\Models\CommitteePage;
 use App\Models\Partner;
 use App\Models\CompetitionPhase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class PublicController extends Controller
 {
-    /**
-     * GET /api/public/candidates
-     *
-     * Retourne uniquement les candidats visibles (is_visible = true),
-     * groupés par département, avec leurs scores par phase.
-     *
-     * Règles :
-     * - Candidat éliminé (is_visible = false) → exclu totalement
-     * - Phase "completed" → score visible publiquement
-     * - Phase "active"    → score masqué (null), mais statut visible
-     */
-    public function candidates()
+    public function candidates(Request $request)
     {
         try {
-            // 1. Phases actives ou terminées uniquement (pas les "pending")
+            $search       = $request->query('search');
+            $departmentId = $request->query('department_id');
+            $year         = $request->query('year');
+
             $phases = CompetitionPhase::whereIn('status', ['active', 'completed'])
                 ->orderBy('phase_number')
                 ->get(['id', 'phase_number', 'name', 'status', 'is_final']);
@@ -33,21 +26,21 @@ class PublicController extends Controller
             $hasCompetition = $phases->isNotEmpty();
             $phaseIds       = $phases->pluck('id');
 
-            // 2. Candidats validés ET visibles (is_visible = true exclut les éliminés)
             $users = \App\Models\User::where('role', 'candidat')
+                ->when($search, fn($q) => $q->where('name', 'like', "%{$search}%"))
                 ->whereHas('candidate', fn($q) => $q
                     ->where('status', 'validated')
                     ->where('is_visible', true)
+                    ->when($departmentId, fn($q) => $q->where('department_id', $departmentId))
+                    ->when($year,         fn($q) => $q->where('year', $year))
                 )
                 ->with([
                     'candidate',
                     'candidate.department',
-                    // Charger uniquement les scores des phases publiques
                     'candidate.scores' => fn($q) => $q->whereIn('phase_id', $phaseIds),
                 ])
                 ->get();
 
-            // 3. Construire la réponse groupée
             $grouped = [];
 
             foreach ($users as $u) {
@@ -56,40 +49,30 @@ class PublicController extends Controller
 
                 $deptName = $candidate->department?->name ?? 'Autre';
 
-                // ── Construire phase_scores ──
-                // Même structure que /my-scores :
-                // { phase_number, phase_name, score, status, is_final, phase_status }
                 $phaseScores = $phases->map(function ($phase) use ($candidate) {
-                    // Chercher le score de ce candidat pour cette phase
-                    $scoreEntry = $candidate->scores
-                        ->firstWhere('phase_id', $phase->id);
+                    $scoreEntry = $candidate->scores->firstWhere('phase_id', $phase->id);
 
-                    // Candidat absent de cette phase → on skip
                     if (!$scoreEntry) return null;
 
-                    // Score visible uniquement si la phase est terminée
-                    $showScore = ($phase->status === 'completed')
-                        && ($scoreEntry->score !== null);
+                    $showScore = ($phase->status === 'completed') && ($scoreEntry->score !== null);
 
                     return [
                         'phase_number' => $phase->phase_number,
                         'phase_name'   => $phase->name,
                         'score'        => $showScore ? (float) $scoreEntry->score : null,
-                        'status'       => $scoreEntry->status,  // pending|continuing|eliminated|leader
+                        'status'       => $scoreEntry->status,
                         'is_final'     => (bool) $phase->is_final,
-                        'phase_status' => $phase->status,        // active|completed
+                        'phase_status' => $phase->status,
                     ];
                 })
-                ->filter()   // retirer les null
+                ->filter()
                 ->values();
 
                 $grouped[$deptName][] = [
                     'id'              => $u->id,
                     'candidate_id'    => $candidate->id,
                     'name'            => $u->name,
-                    'photo_url'       => $u->avatar
-                        ? asset('storage/' . $u->avatar)
-                        : null,
+                    'photo_url'       => $u->avatar ? asset('storage/' . $u->avatar) : null,
                     'department'      => $deptName,
                     'department_slug' => $candidate->department?->slug ?? '',
                     'year'            => $candidate->year,
@@ -101,7 +84,6 @@ class PublicController extends Controller
                 ];
             }
 
-            // 4. Tri : leaders en premier, puis phase décroissante
             foreach ($grouped as &$candidates) {
                 usort($candidates, function ($a, $b) {
                     if ($a['is_leader'] && !$b['is_leader']) return -1;
@@ -129,8 +111,6 @@ class PublicController extends Controller
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-
     public function departments()
     {
         try {
@@ -141,9 +121,6 @@ class PublicController extends Controller
         }
     }
 
-    /**
-     * GET /api/public/committee
-     */
     public function committee()
     {
         try {
@@ -185,9 +162,6 @@ class PublicController extends Controller
         }
     }
 
-    /**
-     * GET /api/public/partners
-     */
     public function partners()
     {
         try {
