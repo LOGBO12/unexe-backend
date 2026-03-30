@@ -14,8 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
 
-        // AJOUT DU CORS GLOBAL
-        $middleware->append([
+                $middleware->prepend([
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
 
