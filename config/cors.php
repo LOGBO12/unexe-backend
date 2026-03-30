@@ -16,10 +16,12 @@ return [
     */
 
 'paths' => ['api/*', 'sanctum/csrf-cookie'], // cible uniquement l'API
-    'allowed_methods' => ['*'],
+    //'allowed_methods' => ['*'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     'allowed_origins' => ['https://unexe2026.vercel.app'],
     'allowed_origins_patterns' => [],
-    'allowed_headers' => ['*'],
+    'allowed_headers' => ['Content-Type', 'Accept', 'Authorization', 'X-Requested-With'],
+    //'allowed_headers' => ['*'],
     'exposed_headers' => [],
     'max_age' => 0,
     'supports_credentials' => true,
