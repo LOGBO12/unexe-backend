@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Storage;
 
 // Controllers publics
 use App\Http\Controllers\Public\PublicController;
@@ -25,13 +27,44 @@ use App\Http\Controllers\Admin\RegistrationController;
 use App\Http\Controllers\Admin\CompetitionController;
 
 // ===================================================
+// ROUTES STATIQUES (fichiers)
+// ===================================================
+
+// ─── Images partenaires ───
+Route::get('/storage/partners/{filename}', function ($filename) {
+    $path = storage_path('app/public/partners/' . $filename);
+
+    if (!file_exists($path)) {
+        abort(404);
+    }
+
+    return Response::file($path, [
+        'Access-Control-Allow-Origin' => 'https://unexe2026.vercel.app',
+        'Access-Control-Allow-Credentials' => 'true',
+    ]);
+});
+
+// ─── Avatars utilisateurs ───
+Route::get('/storage/avatars/{filename}', function ($filename) {
+    $path = storage_path('app/public/avatars/' . $filename);
+
+    if (!file_exists($path)) {
+        abort(404);
+    }
+
+    return Response::file($path, [
+        'Access-Control-Allow-Origin' => 'https://unexe2026.vercel.app',
+        'Access-Control-Allow-Credentials' => 'true',
+    ]);
+});
+
+// ===================================================
 // ROUTES PUBLIQUES (sans authentification)
 // ===================================================
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 Route::get('/registration-status', [RegistrationController::class, 'status']);
 Route::get('/leaderboard', [CompetitionController::class, 'publicLeaderboard']);
-
 
 Route::get('/invitation/{token}',          [InvitationController::class, 'checkToken']);
 Route::post('/invitation/{token}/activate', [InvitationController::class, 'activate']);
@@ -56,7 +89,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me',      [AuthController::class, 'me']);
 
-
     // ── PROFIL (tous les utilisateurs connectés) ──
     Route::get('/admin/profile',             [AdminProfileController::class, 'show']);
     Route::post('/admin/profile/update',     [AdminProfileController::class, 'update']);
@@ -74,7 +106,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/applications',  [ApplicationController::class, 'store']);
         Route::get('/my-application', [ApplicationController::class, 'myApplication']);
         Route::get('/my-scores', [CompetitionController::class, 'myScores']);
-
     });
 
     // -----------------------------------------------
@@ -100,12 +131,14 @@ Route::middleware('auth:sanctum')->group(function () {
         });
     });
 
-    Route::middleware(['auth:sanctum', 'role:super_admin'])->group(function () {
-    Route::get('/admin/registration-settings',              [RegistrationController::class, 'show']);
-    Route::put('/admin/registration-settings',              [RegistrationController::class, 'update']);
-    Route::delete('/admin/registration-settings/deadline',  [RegistrationController::class, 'clearDeadline']);
-});
-
+    // -----------------------------------------------
+    // SUPER ADMIN (paramètres inscription)
+    // -----------------------------------------------
+    Route::middleware('role:super_admin')->group(function () {
+        Route::get('/admin/registration-settings',              [RegistrationController::class, 'show']);
+        Route::put('/admin/registration-settings',              [RegistrationController::class, 'update']);
+        Route::delete('/admin/registration-settings/deadline',  [RegistrationController::class, 'clearDeadline']);
+    });
 
     // -----------------------------------------------
     // COMITÉ & ADMIN
@@ -143,14 +176,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/partners/{id}',   [PartnerController::class, 'update']);
         Route::delete('/partners/{id}', [PartnerController::class, 'destroy']);
 
-     Route::prefix('competition')->group(function () {
-    Route::get('/phases',                 [CompetitionController::class, 'phases']);
-    Route::post('/setup',                 [CompetitionController::class, 'setup']);
-    Route::delete('/reset',               [CompetitionController::class, 'reset']);        
-    Route::put('/phases/{id}/activate',   [CompetitionController::class, 'activatePhase']);
-    Route::put('/phases/{id}/complete',   [CompetitionController::class, 'completePhase']);
-    Route::get('/phases/{id}/candidates', [CompetitionController::class, 'phaseCandidates']);
-    Route::post('/scores/{scoreId}',      [CompetitionController::class, 'gradeCandidate']);
-});
+        // Compétition
+        Route::prefix('competition')->group(function () {
+            Route::get('/phases',                 [CompetitionController::class, 'phases']);
+            Route::post('/setup',                 [CompetitionController::class, 'setup']);
+            Route::delete('/reset',               [CompetitionController::class, 'reset']);        
+            Route::put('/phases/{id}/activate',   [CompetitionController::class, 'activatePhase']);
+            Route::put('/phases/{id}/complete',   [CompetitionController::class, 'completePhase']);
+            Route::get('/phases/{id}/candidates', [CompetitionController::class, 'phaseCandidates']);
+            Route::post('/scores/{scoreId}',      [CompetitionController::class, 'gradeCandidate']);
+        });
     });
 });
