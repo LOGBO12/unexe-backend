@@ -72,7 +72,9 @@ class PublicController extends Controller
                     'id'              => $u->id,
                     'candidate_id'    => $candidate->id,
                     'name'            => $u->name,
-                    'photo_url'       => $u->avatar ? asset('storage/' . $u->avatar) : null,
+                    'photo_url' => $u->avatar 
+                    ? url('/api/storage/avatars/' . basename($u->avatar)) 
+                    : null,
                     'department'      => $deptName,
                     'department_slug' => $candidate->department?->slug ?? '',
                     'year'            => $candidate->year,
@@ -147,11 +149,11 @@ class PublicController extends Controller
                     'name'      => $m->user?->name ?? 'Membre',
                     'position'  => $m->position,
                     'bio'       => $m->bio,
-                    'photo_url' => $m->photo
-                        ? asset('storage/' . $m->photo)
-                        : ($m->user?->avatar
-                            ? asset('storage/' . $m->user->avatar)
-                            : null),
+                   'photo_url' => $m->photo
+    ? url('/api/storage/avatars/' . basename($m->photo))
+    : ($m->user?->avatar
+        ? url('/api/storage/avatars/' . basename($m->user->avatar))
+        : null),
                 ]);
 
             return response()->json(['page' => $pageData, 'members' => $members]);
@@ -171,7 +173,8 @@ class PublicController extends Controller
                     'id'       => $p->id,
                     'name'     => $p->name,
                     'website'  => $p->website,
-                    'logo_url' => $p->logo ? asset('storage/' . $p->logo) : null,
+                   'logo_url' => $p->logo ? url('/api/storage/partners/' . basename($p->logo)) : null,
+
                 ]);
 
             return response()->json($partners);
