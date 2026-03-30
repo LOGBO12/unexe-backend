@@ -13,11 +13,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // ❌ SUPPRIME ÇA
-    // $middleware->api(prepend: [
-    //     \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-    // ]);
 
+        // AJOUT DU CORS GLOBAL
+        $middleware->append([
+            \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
+
+        // alias de tes middlewares existants
         $middleware->alias([
             'verified'          => \App\Http\Middleware\EnsureEmailIsVerified::class,
             'role'              => \App\Http\Middleware\RoleMiddleware::class,
