@@ -19,8 +19,8 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['https://unexe2026.vercel.app','http://localhost:5173',],
-    
+    'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:3000')],
+
     'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
