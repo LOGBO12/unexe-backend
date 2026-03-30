@@ -6,42 +6,40 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up(): void
-    {
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
-            $table->enum('role', ['super_admin', 'comite', 'candidat'])->default('candidat');
-            $table->string('avatar')->nullable();
-            $table->boolean('is_profile_complete')->default(false);
-            $table->foreignId('invited_by')->nullable()->constrained('users')->onDelete('set null');
-            $table->rememberToken();
-            $table->timestamps();
-        });
+   public function up(): void
+        {
+            Schema::create('users', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('email')->unique();
+                $table->timestamp('email_verified_at')->nullable();
+                $table->string('password');
+                $table->enum('role', ['super_admin', 'comite', 'candidat'])->default('candidat');
+                $table->string('avatar')->nullable();
+                $table->boolean('is_profile_complete')->default(false);
+                $table->foreignId('invited_by')->nullable(); // 👈 sans constrained() ici
+                $table->rememberToken();
+                $table->timestamps();
+            });
 
-        Schema::create('password_reset_tokens', function (Blueprint $table) {
-            $table->string('email')->primary();
-            $table->string('token');
-            $table->timestamp('created_at')->nullable();
-        });
+            // 👇 Ajouter la FK après la création de la table
+            Schema::table('users', function (Blueprint $table) {
+                $table->foreign('invited_by')->references('id')->on('users')->onDelete('set null');
+            });
 
-        Schema::create('sessions', function (Blueprint $table) {
-            $table->string('id')->primary();
-            $table->foreignId('user_id')->nullable()->index();
-            $table->string('ip_address', 45)->nullable();
-            $table->text('user_agent')->nullable();
-            $table->longText('payload');
-            $table->integer('last_activity')->index();
-        });
-    }
+            Schema::create('password_reset_tokens', function (Blueprint $table) {
+                $table->string('email')->primary();
+                $table->string('token');
+                $table->timestamp('created_at')->nullable();
+            });
 
-    public function down(): void
-    {
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
-        Schema::dropIfExists('sessions');
-    }
+            Schema::create('sessions', function (Blueprint $table) {
+                $table->string('id')->primary();
+                $table->foreignId('user_id')->nullable()->index();
+                $table->string('ip_address', 45)->nullable();
+                $table->text('user_agent')->nullable();
+                $table->longText('payload');
+                $table->integer('last_activity')->index();
+            });
+        }
 };
