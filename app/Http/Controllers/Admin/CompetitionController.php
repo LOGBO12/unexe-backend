@@ -79,20 +79,31 @@ class CompetitionController extends Controller
 
     try {
         DB::transaction(function () use ($data, $request) {
-            CompetitionPhase::where('status', 'pending')->delete();
+    // 1. Récupérer les IDs des phases pending
+    $pendingPhaseIds = CompetitionPhase::where('status', 'pending')
+        ->pluck('id');
 
-            foreach ($data['phases'] as $i => $phaseData) {
-                CompetitionPhase::create([
-                    'phase_number' => $i + 1,
-                    'name'         => $phaseData['name'],
-                    'description'  => $phaseData['description'] ?? null,
-                    'total_phases' => $data['total_phases'],
-                    'status'       => 'pending',
-                    'is_final'     => ($i + 1) === $data['total_phases'],
-                    'created_by'   => $request->user()->id,
-                ]);
-            }
-        });
+    // 2. Supprimer les scores liés à ces phases d'abord
+    if ($pendingPhaseIds->isNotEmpty()) {
+        CandidateScore::whereIn('phase_id', $pendingPhaseIds)->delete();
+    }
+
+    // 3. Maintenant supprimer les phases
+    CompetitionPhase::whereIn('id', $pendingPhaseIds)->delete();
+
+    // 4. Recréer les phases
+    foreach ($data['phases'] as $i => $phaseData) {
+        CompetitionPhase::create([
+            'phase_number' => $i + 1,
+            'name'         => $phaseData['name'],
+            'description'  => $phaseData['description'] ?? null,
+            'total_phases' => $data['total_phases'],
+            'status'       => 'pending',
+            'is_final'     => ($i + 1) === $data['total_phases'],
+            'created_by'   => $request->user()->id,
+        ]);
+    }
+});
     } catch (\Exception $e) {
         \Log::error('[Competition setup] ' . $e->getMessage(), [
             'trace' => $e->getTraceAsString()
@@ -231,13 +242,7 @@ class CompetitionController extends Controller
         ]);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // NOTATION
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * GET /admin/competition/phases/{id}/candidates
-     */
+   
     public function phaseCandidates(Request $request, int $id)
     {
         $phase = CompetitionPhase::findOrFail($id);
