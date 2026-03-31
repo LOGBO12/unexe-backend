@@ -79,6 +79,22 @@ Route::get('/storage/committee/{filename}', function ($filename) use ($corsHeade
     return response()->file($path);
 });
 
+// ─── Documents de candidature ───
+Route::get('/storage/applications/{user}/{filename}', function ($user, $filename) use ($corsHeaders) {
+    $path = storage_path('app/public/applications/' . $user . '/' . $filename);
+    if (!file_exists($path)) abort(404);
+    
+    foreach ($corsHeaders as $key => $value) {
+        header($key . ': ' . $value);
+    }
+    
+    return response()->file($path);
+});
+
+Route::options('/storage/applications/{user}/{filename}', function () use ($corsHeaders) {
+    return response('', 204)->withHeaders($corsHeaders);
+});
+
 // ===================================================
 // ROUTES PUBLIQUES (sans authentification)
 // ===================================================
