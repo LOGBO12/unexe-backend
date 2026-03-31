@@ -230,7 +230,7 @@ class ApplicationController extends Controller
                     'key'   => $key,
                     'label' => $docLabels[$key] ?? $key,
                     'path'  => $path,
-                    'url'   => Storage::url($path),
+                    'url'   => 'https://unexe.alwaysdata.net/api/storage/' . $path,
                 ];
             }
             $application->documents_urls = $docs;
