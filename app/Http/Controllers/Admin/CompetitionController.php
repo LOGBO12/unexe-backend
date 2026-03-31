@@ -55,7 +55,7 @@ class CompetitionController extends Controller
      * POST /admin/competition/setup
      * Créer les phases. Si des phases "pending" existent déjà, elles sont d'abord supprimées.
      */
-    public function setup(Request $request)
+  public function setup(Request $request)
 {
     $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
     if ($lockedPhases > 0) {
@@ -78,38 +78,54 @@ class CompetitionController extends Controller
     }
 
     try {
-        DB::transaction(function () use ($data, $request) {
-    // 1. Récupérer les IDs des phases pending
-    $pendingPhaseIds = CompetitionPhase::where('status', 'pending')
-        ->pluck('id');
-
-    // 2. Supprimer les scores liés à ces phases d'abord
-    if ($pendingPhaseIds->isNotEmpty()) {
-        CandidateScore::whereIn('phase_id', $pendingPhaseIds)->delete();
+        // Nettoyer toute transaction en cours avant de commencer
+        DB::statement('ROLLBACK') ;
+    } catch (\Throwable $e) {
+        // Ignore si pas de transaction active
     }
 
-    // 3. Maintenant supprimer les phases
-    CompetitionPhase::whereIn('id', $pendingPhaseIds)->delete();
+    try {
+        DB::beginTransaction();
 
-    // 4. Recréer les phases
-    foreach ($data['phases'] as $i => $phaseData) {
-        CompetitionPhase::create([
-            'phase_number' => $i + 1,
-            'name'         => $phaseData['name'],
-            'description'  => $phaseData['description'] ?? null,
-            'total_phases' => $data['total_phases'],
-            'status'       => 'pending',
-            'is_final'     => ($i + 1) === $data['total_phases'],
-            'created_by'   => $request->user()->id,
-        ]);
-    }
-});
-    } catch (\Exception $e) {
-        \Log::error('[Competition setup] ' . $e->getMessage(), [
-            'trace' => $e->getTraceAsString()
-        ]);
+        // Récupérer les IDs des phases pending
+        $pendingPhaseIds = CompetitionPhase::where('status', 'pending')
+            ->pluck('id')
+            ->toArray();
+
+        // Supprimer les scores liés d'abord
+        if (!empty($pendingPhaseIds)) {
+            DB::table('candidate_scores')
+                ->whereIn('phase_id', $pendingPhaseIds)
+                ->delete();
+
+            DB::table('competition_phases')
+                ->whereIn('id', $pendingPhaseIds)
+                ->delete();
+        }
+
+        // Créer les nouvelles phases
+        $now = now();
+        foreach ($data['phases'] as $i => $phaseData) {
+            DB::table('competition_phases')->insert([
+                'phase_number' => $i + 1,
+                'name'         => $phaseData['name'],
+                'description'  => $phaseData['description'] ?? null,
+                'total_phases' => $data['total_phases'],
+                'status'       => 'pending',
+                'is_final'     => ($i + 1) === $data['total_phases'],
+                'created_by'   => $request->user()->id,
+                'created_at'   => $now,
+                'updated_at'   => $now,
+            ]);
+        }
+
+        DB::commit();
+
+    } catch (\Throwable $e) {
+        try { DB::rollBack(); } catch (\Throwable $rb) {}
         return response()->json([
-            'message' => 'Erreur serveur : ' . $e->getMessage()
+            'message' => 'Erreur serveur',
+            'debug'   => $e->getMessage(),
         ], 500);
     }
 
@@ -129,7 +145,7 @@ class CompetitionController extends Controller
      * DELETE /admin/competition/reset
      * Réinitialiser entièrement le concours (uniquement si toutes les phases sont "pending")
      */
-    public function reset(Request $request)
+  public function reset(Request $request)
 {
     $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
     if ($lockedPhases > 0) {
@@ -138,11 +154,34 @@ class CompetitionController extends Controller
         ], 422);
     }
 
-    $pendingPhaseIds = CompetitionPhase::where('status', 'pending')->pluck('id');
+    try {
+        try { DB::statement('ROLLBACK'); } catch (\Throwable $e) {}
 
-    if ($pendingPhaseIds->isNotEmpty()) {
-        CandidateScore::whereIn('phase_id', $pendingPhaseIds)->delete();
-        CompetitionPhase::whereIn('id', $pendingPhaseIds)->delete();
+        DB::beginTransaction();
+
+        $pendingPhaseIds = DB::table('competition_phases')
+            ->where('status', 'pending')
+            ->pluck('id')
+            ->toArray();
+
+        if (!empty($pendingPhaseIds)) {
+            DB::table('candidate_scores')
+                ->whereIn('phase_id', $pendingPhaseIds)
+                ->delete();
+
+            DB::table('competition_phases')
+                ->whereIn('id', $pendingPhaseIds)
+                ->delete();
+        }
+
+        DB::commit();
+
+    } catch (\Throwable $e) {
+        try { DB::rollBack(); } catch (\Throwable $rb) {}
+        return response()->json([
+            'message' => 'Erreur serveur',
+            'debug'   => $e->getMessage(),
+        ], 500);
     }
 
     ActionLog::log($request->user(), 'reset_competition', null, []);
