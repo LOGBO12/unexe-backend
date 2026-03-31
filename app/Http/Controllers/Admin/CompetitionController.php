@@ -301,7 +301,9 @@ class CompetitionController extends Controller
                     'candidate_id'    => $c->id,
                     'name'            => $c->user?->name,
                     'email'           => $c->user?->email,
-                    'photo_url'       => $c->user?->avatar ? asset('storage/' . $c->user->avatar) : null,
+                    'photo_url' => $c->user?->avatar
+                        ? 'https://unexe.alwaysdata.net/api/storage/avatars/' . basename($c->user->avatar)
+                        : null,
                     'department'      => $c->department?->name,
                     'department_slug' => $c->department?->slug,
                     'filiere'         => $c->filiere,
@@ -438,7 +440,9 @@ class CompetitionController extends Controller
                 return [
                     'id'              => $c->id,
                     'name'            => $c->user?->name,
-                    'photo_url'       => $c->user?->avatar ? asset('storage/' . $c->user->avatar) : null,
+                    'photo_url' => $c->user?->avatar
+                        ? 'https://unexe.alwaysdata.net/api/storage/avatars/' . basename($c->user->avatar)
+                        : null,
                     'department'      => $c->department?->name,
                     'department_slug' => $c->department?->slug,
                     'filiere'         => $c->filiere,
