@@ -88,8 +88,7 @@ class CommitteeController extends Controller
             'vision'              => $page->vision,
             'objectives'          => $page->objectives ?? [],
             'team_photo'          => $page->team_photo,
-            'team_photo_url'      => $page->team_photo ? asset('storage/' . $page->team_photo) : null,
-        ]);
+            'team_photo_url' => $page->team_photo ? url('/api/storage/committee/' . basename($page->team_photo)) : null, ]);
     }
 
     // Ajouter cette méthode dans CommitteeController
@@ -140,7 +139,7 @@ public function availableUsers()
             'vision'              => $page->vision,
             'objectives'          => $page->objectives ?? [],
             'team_photo'          => $page->team_photo,
-            'team_photo_url'      => $page->team_photo ? asset('storage/' . $page->team_photo) : null,
+            'team_photo_url' => $page->team_photo ? url('/api/storage/committee/' . basename($page->team_photo)) : null,
         ]);
     }
 }

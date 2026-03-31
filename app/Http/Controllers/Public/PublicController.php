@@ -136,12 +136,12 @@ class PublicController extends Controller
                     'vision'              => $page->vision,
                     'objectives'          => $page->objectives ?? [],
                     'team_photo_url' => $page->team_photo
-                        ? url('/api/storage/avatars/' . basename($page->team_photo))
+                        ? url('/api/storage/committee/' . basename($page->team_photo))
                         : null,
                 ];
             }
 
-            $members = CommitteeMember::with('user')
+                        $members = CommitteeMember::with('user')
                 ->orderBy('display_order')
                 ->get()
                 ->map(fn($m) => [
@@ -149,11 +149,11 @@ class PublicController extends Controller
                     'name'      => $m->user?->name ?? 'Membre',
                     'position'  => $m->position,
                     'bio'       => $m->bio,
-                   'photo_url' => $m->photo
-    ? url('/api/storage/avatars/' . basename($m->photo))
-    : ($m->user?->avatar
-        ? url('/api/storage/avatars/' . basename($m->user->avatar))
-        : null),
+                    'photo_url' => $m->photo
+                        ? url('/api/storage/committee/' . basename($m->photo))
+                        : ($m->user?->avatar
+                            ? url('/api/storage/avatars/' . basename($m->user->avatar))
+                            : null),
                 ]);
 
             return response()->json(['page' => $pageData, 'members' => $members]);
