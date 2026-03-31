@@ -135,8 +135,8 @@ class PublicController extends Controller
                     'project_description' => $page->project_description,
                     'vision'              => $page->vision,
                     'objectives'          => $page->objectives ?? [],
-                    'team_photo_url'      => $page->team_photo
-                        ? asset('storage/' . $page->team_photo)
+                    'team_photo_url' => $page->team_photo
+                        ? url('/api/storage/avatars/' . basename($page->team_photo))
                         : null,
                 ];
             }

@@ -70,6 +70,17 @@ Route::get('/storage/avatars/{filename}', function ($filename) use ($corsHeaders
 // ===================================================
 // ROUTES PUBLIQUES (sans authentification)
 // ===================================================
+
+// Preflight pour /profile (avant les routes protégées)
+Route::options('/profile', function () {
+    return response('', 204)->withHeaders([
+        'Access-Control-Allow-Origin'      => 'https://unexe2026.vercel.app',
+        'Access-Control-Allow-Credentials' => 'true',
+        'Access-Control-Allow-Methods'     => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers'     => 'Content-Type, Accept, Authorization, X-Requested-With',
+    ]);
+});
+
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 Route::get('/registration-status', [RegistrationController::class, 'status']);
