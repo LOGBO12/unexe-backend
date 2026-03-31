@@ -130,20 +130,25 @@ class CompetitionController extends Controller
      * Réinitialiser entièrement le concours (uniquement si toutes les phases sont "pending")
      */
     public function reset(Request $request)
-    {
-        $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
-        if ($lockedPhases > 0) {
-            return response()->json([
-                'message' => 'Impossible de réinitialiser : une ou plusieurs phases sont actives ou terminées.'
-            ], 422);
-        }
-
-        CompetitionPhase::where('status', 'pending')->delete();
-
-        ActionLog::log($request->user(), 'reset_competition', null, []);
-
-        return response()->json(['message' => 'Concours réinitialisé. Vous pouvez reconfigurer les phases.']);
+{
+    $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
+    if ($lockedPhases > 0) {
+        return response()->json([
+            'message' => 'Impossible de réinitialiser : une ou plusieurs phases sont actives ou terminées.'
+        ], 422);
     }
+
+    $pendingPhaseIds = CompetitionPhase::where('status', 'pending')->pluck('id');
+
+    if ($pendingPhaseIds->isNotEmpty()) {
+        CandidateScore::whereIn('phase_id', $pendingPhaseIds)->delete();
+        CompetitionPhase::whereIn('id', $pendingPhaseIds)->delete();
+    }
+
+    ActionLog::log($request->user(), 'reset_competition', null, []);
+
+    return response()->json(['message' => 'Concours réinitialisé. Vous pouvez reconfigurer les phases.']);
+}
 
     /**
      * PUT /admin/competition/phases/{id}/activate
