@@ -56,33 +56,31 @@ class CompetitionController extends Controller
      * Créer les phases. Si des phases "pending" existent déjà, elles sont d'abord supprimées.
      */
     public function setup(Request $request)
-    {
-        // Vérifier qu'aucune phase n'est active ou terminée
-        $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
-        if ($lockedPhases > 0) {
-            return response()->json([
-                'message' => 'Impossible de reconfigurer : une ou plusieurs phases sont déjà actives ou terminées.'
-            ], 422);
-        }
+{
+    $lockedPhases = CompetitionPhase::whereIn('status', ['active', 'completed'])->count();
+    if ($lockedPhases > 0) {
+        return response()->json([
+            'message' => 'Impossible de reconfigurer : une ou plusieurs phases sont déjà actives ou terminées.'
+        ], 422);
+    }
 
-        $data = $request->validate([
-            'total_phases'          => 'required|integer|min:1|max:10',
-            'phases'                => 'required|array',
-            'phases.*.name'         => 'required|string|max:255',
-            'phases.*.description'  => 'nullable|string|max:500',
-        ]);
+    $data = $request->validate([
+        'total_phases'          => 'required|integer|min:1|max:10',
+        'phases'                => 'required|array',
+        'phases.*.name'         => 'required|string|max:255',
+        'phases.*.description'  => 'nullable|string|max:500',
+    ]);
 
-        if (count($data['phases']) !== $data['total_phases']) {
-            return response()->json([
-                'message' => 'Le nombre de phases définies doit correspondre au total.'
-            ], 422);
-        }
+    if (count($data['phases']) !== $data['total_phases']) {
+        return response()->json([
+            'message' => 'Le nombre de phases définies doit correspondre au total.'
+        ], 422);
+    }
 
+    try {
         DB::transaction(function () use ($data, $request) {
-            // Supprimer les anciennes phases "pending" (et leurs scores en cascade)
             CompetitionPhase::where('status', 'pending')->delete();
 
-            // Recréer
             foreach ($data['phases'] as $i => $phaseData) {
                 CompetitionPhase::create([
                     'phase_number' => $i + 1,
@@ -95,18 +93,26 @@ class CompetitionController extends Controller
                 ]);
             }
         });
-
-        $created = CompetitionPhase::orderBy('phase_number')->get();
-
-        ActionLog::log($request->user(), 'setup_competition', null, [
-            'total_phases' => $data['total_phases'],
+    } catch (\Exception $e) {
+        \Log::error('[Competition setup] ' . $e->getMessage(), [
+            'trace' => $e->getTraceAsString()
         ]);
-
         return response()->json([
-            'message' => 'Concours configuré avec ' . $data['total_phases'] . ' phase(s).',
-            'phases'  => $created,
-        ], 201);
+            'message' => 'Erreur serveur : ' . $e->getMessage()
+        ], 500);
     }
+
+    $created = CompetitionPhase::orderBy('phase_number')->get();
+
+    ActionLog::log($request->user(), 'setup_competition', null, [
+        'total_phases' => $data['total_phases'],
+    ]);
+
+    return response()->json([
+        'message' => 'Concours configuré avec ' . $data['total_phases'] . ' phase(s).',
+        'phases'  => $created,
+    ], 201);
+}
 
     /**
      * DELETE /admin/competition/reset

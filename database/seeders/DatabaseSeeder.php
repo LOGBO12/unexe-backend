@@ -14,7 +14,7 @@ class DatabaseSeeder extends Seeder
         // Super Admin
         $superAdmin = User::create([
             'name' => 'Super Admin UNEXE',
-            'email' => 'admin@unexe.bj',
+            'email' => 'universityexcellenceelite.unexe@gmail.com',
             'password' => Hash::make('Unexe@2025!'),
             'role' => 'super_admin',
             'is_profile_complete' => true,
