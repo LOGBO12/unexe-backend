@@ -38,7 +38,7 @@ $corsHeaders = [
     'Cache-Control'                    => 'public, max-age=86400',
 ];
 
-// ─── Preflight OPTIONS ───
+// ─── Preflight OPTIONS générique pour storage ───
 Route::options('/storage/{type}/{filename}', function () use ($corsHeaders) {
     return response('', 204)->withHeaders($corsHeaders);
 });
@@ -58,6 +58,18 @@ Route::get('/storage/partners/{filename}', function ($filename) use ($corsHeader
 // ─── Avatars utilisateurs ───
 Route::get('/storage/avatars/{filename}', function ($filename) use ($corsHeaders) {
     $path = storage_path('app/public/avatars/' . $filename);
+    if (!file_exists($path)) abort(404);
+    
+    foreach ($corsHeaders as $key => $value) {
+        header($key . ': ' . $value);
+    }
+    
+    return response()->file($path);
+});
+
+// ─── Photos comité ───
+Route::get('/storage/committee/{filename}', function ($filename) use ($corsHeaders) {
+    $path = storage_path('app/public/committee/' . $filename);
     if (!file_exists($path)) abort(404);
     
     foreach ($corsHeaders as $key => $value) {
